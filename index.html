@@ -2,267 +2,301 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Mobile Camera Scanner Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Barcode Scanner Demo</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    :root { color-scheme: dark; --page:#343a40; --panel:#383d41; --panel2:#3d4247; --line:#2b3035; --accent:#00bcd4; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; background: #17191c; color: #f5f5f5; }
-    main { width: min(100%, 760px); margin: 0 auto; }
-    h1 { font-size: 1.35rem; margin: 0 0 8px; }
-    p { line-height: 1.45; color: #c9cdd2; }
-    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
-    select, button { width: 100%; min-height: 44px; border: 1px solid #626a73; border-radius: 8px; padding: 10px; font: inherit; color: #fff; background: #2b3036; }
-    button { cursor: pointer; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .viewer { position: relative; width: 100%; overflow: hidden; background: #000; border-radius: 12px; min-height: 220px; }
-    #mobileCamFeed { display: block; width: 100%; height: auto; max-height: 65vh; object-fit: contain; background: #000; }
-    .aimLayer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-    .aimWindow { width: 55%; height: 35%; min-height: 75px; border: 2px solid #fff; border-radius: 9px; box-shadow: 0 0 0 9999px rgba(0,0,0,.32); }
-    .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #252a30; overflow-wrap: anywhere; }
-    .result { font-size: 1.1rem; font-weight: 650; color: #9fe6ad; }
-    .hint { font-size: .9rem; }
-    @media (max-width: 480px) {
-      body { padding: 12px; }
-      .controls { grid-template-columns: 1fr; }
-      #mobileCamFeed { max-height: 58vh; }
-      .aimWindow { width: 70%; height: 28%; }
+    body { margin:0; background:var(--page); color:#f5f5f5; font:16px/1.45 Arial, Helvetica, sans-serif; }
+    .demo-page { min-height:100vh; display:flex; flex-direction:column; }
+    .scanner-header { text-align:center; padding:12px 16px 20px; font-size:28px; font-weight:700; }
+    .scanner-toolbar { padding:8px 16px 12px; }
+    .camera-select { width:min(100%, 250px); min-height:32px; background:#343a40; color:#fff; border:1px solid #777; padding:4px 8px; border-radius:3px; }
+    .camera-status { margin-left:10px; color:#cfd4da; font-size:13px; }
+    .scanner-stage { position:relative; margin:0 8px; height:min(72vh, 760px); min-height:280px; background:#050505; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+    .camera-feed { width:100%; height:100%; display:block; object-fit:cover; background:#050505; }
+    .scan-window { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(55%, 940px); height:35%; border:2px solid rgba(255,255,255,.95); border-radius:7px; box-shadow:0 0 0 9999px rgba(0,0,0,.30); pointer-events:none; }
+    .scan-help { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); width:max-content; max-width:90%; text-align:center; font-size:13px; color:#ddd; background:rgba(0,0,0,.6); padding:5px 10px; border-radius:4px; pointer-events:none; }
+    .scanner-actions { display:flex; flex-wrap:wrap; gap:8px; padding:12px 8px; }
+    button { border:1px solid #6c757d; border-radius:4px; padding:8px 13px; color:#fff; background:#495057; cursor:pointer; }
+    button.primary { background:#005b86; border-color:#005b86; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .scan-output { padding:0 8px 14px; color:#d8dde1; overflow-wrap:anywhere; }
+    .results-panel { margin:12px 6px 16px; border:1px solid var(--line); border-radius:4px; overflow:hidden; box-shadow:0 2px 4px #2225; }
+    .results-title { background:#383d41; padding:12px 18px; border-bottom:1px solid var(--line); font-weight:600; }
+    .barcodeScan-row { display:flex; align-items:center; gap:10px; padding:9px 8px; background:#383d41; border-bottom:1px solid #2c3136; min-height:96px; }
+    .barcodeScan-row:last-child { border-bottom:0; }
+    .barcodeScan-icon { flex:0 0 70px; width:70px; height:86px; border-radius:4px; background:#00365b; display:flex; align-items:center; justify-content:center; }
+    .barcodeScan-icon svg { width:36px; height:36px; fill:white; }
+    .barcodeScan-info { min-width:0; }
+    .barcodeScan-name { margin-bottom:5px; }
+    .barcodeScan-project, .barcodeScan-number { margin-top:5px; color:#f4f4f4; }
+    .footer { margin-top:auto; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:17px 6px 20px; color:#aab3bb; background:#383d41; font-size:14px; }
+    .footer a { color:#00bcd4; text-decoration:none; }
+    @media (max-width:600px) {
+      .scanner-header { font-size:23px; padding-bottom:12px; }
+      .scanner-stage { margin:0 5px; height:55vh; min-height:260px; }
+      .scan-window { width:76%; height:27%; }
+      .camera-status { display:block; margin:7px 0 0; }
+      .barcodeScan-icon { flex-basis:58px; width:58px; height:72px; }
+      .barcodeScan-row { min-height:82px; }
+      .footer { padding:14px 8px; }
     }
   </style>
 </head>
 <body>
-<main>
-  <h1>Mobile Camera Scanner Test</h1>
-  <p class="hint">Test camera permission and scan a barcode or QR code. Nothing is sent to a server.</p>
+<div class="demo-page">
+  <header class="scanner-header">Scan the Bar-Code</header>
 
-  <div class="controls">
-    <button id="startCamTest" type="button">Start camera</button>
-    <button id="stopCamTest" type="button" disabled>Stop camera</button>
-    <select id="cameraChoiceTest" aria-label="Choose camera" disabled>
-      <option value="">Camera selection appears after permission </option>
+  <div class="scanner-toolbar">
+    <label for="cameraPickerDemo" style="position:absolute;left:-9999px">Select camera</label>
+    <select id="cameraPickerDemo" class="camera-select" aria-label="Select camera">
+      <option value="">Detecting cameras…</option>
     </select>
-    <button id="torchToggleTest" type="button" disabled>Toggle flash</button>
+    <span id="cameraStatusDemo" class="camera-status" role="status">Click Start camera to begin.</span>
   </div>
 
-  <div class="viewer" id="cameraFrameTest">
-    <video id="mobileCamFeed" autoplay muted playsinline></video>
-    <div class="aimLayer" aria-hidden="true"><div class="aimWindow"></div></div>
-  </div>
+  <section id="scannerStageDemo" class="scanner-stage" aria-label="Camera preview and barcode scan area">
+    <video id="cameraVideoDemo" class="camera-feed" autoplay muted playsinline></video>
+    <div class="scan-window" aria-hidden="true"></div>
+    <div class="scan-help">Place the barcode inside the rectangle</div>
+  </section>
 
-  <div class="status" id="cameraStatusTest" role="status" aria-live="polite">
-    Camera has not been started.
+  <div class="scanner-actions">
+    <button id="startCameraDemo" class="primary" type="button">Start camera</button>
+    <button id="stopCameraDemo" type="button" disabled>Stop camera</button>
+    <button id="torchButtonDemo" type="button" disabled>Toggle torch</button>
   </div>
-  <div class="status">
-    <div>Last scanned value:</div>
-    <div class="result" id="scanOutputTest">—</div>
-  </div>
-  <p class="hint">For mobile testing, open this page using an HTTPS URL. Camera access generally will not work from an ordinary HTTP site or by opening the HTML file directly.</p>
-</main>
+  <div id="scanOutputDemo" class="scan-output" role="status">Scanned code: —</div>
+
+  <section class="results-panel">
+    <div class="results-title">Scanned data</div>
+    <div class="barcodeScan-row">
+      <div class="barcodeScan-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.7 19.3 13.6 10.2a6 6 0 0 1-7.8-7.8l3.6 3.6 2.8-2.8L8.6-.4a6 6 0 0 1 7.8 7.8l9.1 9.1a2 2 0 0 1-2.8 2.8ZM2.4 22.4a2 2 0 0 1 0-2.8l7.8-7.8 2.8 2.8-7.8 7.8a2 2 0 0 1-2.8 0Z" transform="translate(-1 1) scale(.92)"/></svg></div>
+      <div class="barcodeScan-info"><div class="barcodeScan-name">lenovo-desktop 12345 </div><div class="barcodeScan-project">Web development team</div><div class="barcodeScan-number">1000055</div></div>
+    </div>
+    <div class="barcodeScan-row">
+      <div class="barcodeScan-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.7 19.3 13.6 10.2a6 6 0 0 1-7.8-7.8l3.6 3.6 2.8-2.8L8.6-.4a6 6 0 0 1 7.8 7.8l9.1 9.1a2 2 0 0 1-2.8 2.8ZM2.4 22.4a2 2 0 0 1 0-2.8l7.8-7.8 2.8 2.8-7.8 7.8a2 2 0 0 1-2.8 0Z" transform="translate(-1 1) scale(.92)"/></svg></div>
+      <div class="barcodeScan-info"><div class="barcodeScan-name">ThinkCentre M91p</div><div class="barcodeScan-project">Fanfic Backend Team</div><div class="barcodeScan-number">101173</div></div>
+    </div>
+    <div class="barcodeScan-row">
+      <div class="barcodeScan-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.7 19.3 13.6 10.2a6 6 0 0 1-7.8-7.8l3.6 3.6 2.8-2.8L8.6-.4a6 6 0 0 1 7.8 7.8l9.1 9.1a2 2 0 0 1-2.8 2.8ZM2.4 22.4a2 2 0 0 1 0-2.8l7.8-7.8 2.8 2.8-7.8 7.8a2 2 0 0 1-2.8 0Z" transform="translate(-1 1) scale(.92)"/></svg></div>
+      <div class="barcodeScan-info"><div class="barcodeScan-name">Motorola Razor 60</div><div class="barcodeScan-project">Borahae Mobile Development</div><div class="barcodeScan-number">605428</div></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div><strong>Copyright © 2026 taekookMyParents.</strong> All rights to my parents Papa Tae and Mumma Kook. </div>
+    <div>Version 0.0.1 · Scanner demo</div>
+  </footer>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <script>
 (() => {
-  const video = document.getElementById('mobileCamFeed');
-  const cameraSelect = document.getElementById('cameraChoiceTest');
-  const startButton = document.getElementById('startCamTest');
-  const stopButton = document.getElementById('stopCamTest');
-  const torchButton = document.getElementById('torchToggleTest');
-  const status = document.getElementById('cameraStatusTest');
-  const output = document.getElementById('scanOutputTest');
+  const video = document.getElementById('cameraVideoDemo');
+  const picker = document.getElementById('cameraPickerDemo');
+  const status = document.getElementById('cameraStatusDemo');
+  const startButton = document.getElementById('startCameraDemo');
+  const stopButton = document.getElementById('stopCameraDemo');
+  const torchButton = document.getElementById('torchButtonDemo');
+  const output = document.getElementById('scanOutputDemo');
+  const stage = document.getElementById('scannerStageDemo');
 
   let stream = null;
   let reader = null;
   let scanTimer = null;
-  let scanning = false;
+  let activeDeviceId = '';
   let torchOn = false;
-  let canvas = document.createElement('canvas');
-  let context = canvas.getContext('2d', { willReadFrequently: true });
-  let lastValue = '';
-  let lastValueAt = 0;
+  let scanning = false;
+  let lastText = '';
 
-  function showStatus(message) {
-    status.textContent = message;
-  }
+  const setStatus = (message) => { status.textContent = message; };
 
-  function getCrop(width, height) {
-    const cropWidth = Math.round(width * 0.55);
-    const cropHeight = Math.round(height * 0.35);
-    return {
-      x: Math.round((width - cropWidth) / 2),
-      y: Math.round((height - cropHeight) / 2),
-      width: cropWidth,
-      height: cropHeight
-    };
-  }
-
-  async function fillCameraList() {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const cameras = devices.filter(device => device.kind === 'videoinput');
-    cameraSelect.innerHTML = '';
-
-    cameras.forEach((camera, index) => {
-      const option = document.createElement('option');
-      option.value = camera.deviceId;
-      option.textContent = camera.label || `Camera ${index + 1}`;
-      cameraSelect.appendChild(option);
-    });
-
-    const rear = cameras.find(camera => /back|rear|environment/i.test(camera.label));
-    if (rear) cameraSelect.value = rear.deviceId;
-
-    cameraSelect.disabled = cameras.length < 2;
-    if (!cameras.length) showStatus('No camera was found on this device.');
-  }
-
-  async function startCamera() {
-    if (!window.isSecureContext) {
-      showStatus('Camera access requires HTTPS (or localhost). Open this page from an HTTPS URL.');
+  async function loadCameras() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setStatus('Camera API is unavailable in this browser.');
       return;
     }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showStatus('This browser does not provide camera access. Try a current version of Chrome or Safari.');
-      return;
-    }
-
-    stopCamera(false);
-
     try {
-      const chosenId = cameraSelect.value;
-      const constraints = {
-        audio: false,
-        video: chosenId
-          ? { deviceId: { exact: chosenId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-      };
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter(device => device.kind === 'videoinput');
+      const previousId = picker.value;
+      picker.replaceChildren();
 
-      showStatus('Requesting camera permission…');
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = stream;
-      await video.play();
-
-      if (!reader) {
-        if (!window.ZXingBrowser) throw new Error('ZXing library did not load. Check your internet connection.');
-        reader = new ZXingBrowser.BrowserMultiFormatReader();
+      if (!cameras.length) {
+        picker.add(new Option('No cameras found', ''));
+        setStatus('No cameras found. Allow camera access and try again.');
+        return;
       }
 
-      await fillCameraList();
-      scanning = true;
-      startButton.disabled = true;
-      stopButton.disabled = false;
-      updateTorchAvailability();
-      showStatus('Camera is running. Place a code inside the center rectangle.');
+      cameras.forEach((camera, index) => {
+        const label = camera.label || `Camera ${index + 1}`;
+        picker.add(new Option(label, camera.deviceId));
+      });
 
-      scanFrame();
-    } catch (error) {
-      stopCamera(false);
-      if (error.name === 'NotAllowedError') {
-        showStatus('Camera permission was denied. Allow camera access in the browser/site settings, then try again.');
-      } else if (error.name === 'NotFoundError') {
-        showStatus('No suitable camera was found.');
-      } else if (error.name === 'NotReadableError') {
-        showStatus('The camera may already be in use by another app or browser tab.');
+      // Keep the currently selected camera if possible; otherwise choose a sensible default.
+      if (cameras.some(camera => camera.deviceId === activeDeviceId)) {
+        picker.value = activeDeviceId;
+      } else if (cameras.some(camera => camera.deviceId === previousId)) {
+        picker.value = previousId;
       } else {
-        showStatus(`Could not start camera: ${error.message || error.name}`);
+        const backCamera = cameras.find(camera => /back|rear|environment|world/i.test(camera.label));
+        picker.value = (backCamera || cameras[0]).deviceId;
       }
-      console.error(error);
-    }
-  }
-
-  function scanFrame() {
-    if (!scanning) return;
-
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-        video.videoWidth > 0 && video.videoHeight > 0) {
-      const crop = getCrop(video.videoWidth, video.videoHeight);
-      canvas.width = crop.width;
-      canvas.height = crop.height;
-
-      context.drawImage(
-        video,
-        crop.x, crop.y, crop.width, crop.height,
-        0, 0, crop.width, crop.height
-      );
-
-      try {
-        const result = reader.decodeFromCanvas(canvas);
-        const value = result?.getText()?.trim();
-
-        if (value) {
-          const now = Date.now();
-          if (value !== lastValue || now - lastValueAt > 1500) {
-            output.textContent = value;
-            lastValue = value;
-            lastValueAt = now;
-            showStatus('Code detected.');
-          }
-        }
-      } catch (_) {
-        // No code found in this frame; continue scanning.
-      }
-    }
-
-    scanTimer = setTimeout(scanFrame, 150);
-  }
-
-  function updateTorchAvailability() {
-    const track = stream?.getVideoTracks()[0];
-    let supported = false;
-
-    try {
-      supported = Boolean(track?.getCapabilities?.().torch);
-    } catch (_) {
-      supported = false;
-    }
-
-    torchButton.disabled = !supported;
-    torchButton.textContent = supported ? 'Turn flash on' : 'Flash not supported';
-  }
-
-  async function toggleTorch() {
-    const track = stream?.getVideoTracks()[0];
-    if (!track) return;
-
-    try {
-      await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
-      torchOn = !torchOn;
-      torchButton.textContent = torchOn ? 'Turn flash off' : 'Turn flash on';
     } catch (error) {
-      showStatus(`Could not toggle flash: ${error.message || error.name}`);
-      updateTorchAvailability();
+      setStatus('Could not list cameras: ' + error.message);
     }
   }
 
-  function stopCamera(updateMessage = true) {
+  function stopCurrentStream() {
     scanning = false;
-    clearTimeout(scanTimer);
-    scanTimer = null;
-
+    if (scanTimer !== null) {
+      cancelAnimationFrame(scanTimer);
+      scanTimer = null;
+    }
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       stream = null;
     }
-
-    video.pause();
     video.srcObject = null;
     torchOn = false;
-    startButton.disabled = false;
-    stopButton.disabled = true;
+    torchButton.textContent = 'Toggle torch';
     torchButton.disabled = true;
-    torchButton.textContent = 'Toggle flash';
-
-    if (updateMessage) showStatus('Camera stopped.');
+    stopButton.disabled = true;
   }
 
-  startButton.addEventListener('click', startCamera);
-  stopButton.addEventListener('click', () => stopCamera());
-  torchButton.addEventListener('click', toggleTorch);
+  function getCrop() {
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    const box = stage.getBoundingClientRect();
+    const scanWidth = box.width * (window.matchMedia('(max-width: 600px)').matches ? 0.76 : 0.55);
+    const scanHeight = box.height * (window.matchMedia('(max-width: 600px)').matches ? 0.27 : 0.35);
+    const scale = Math.max(videoWidth / box.width, videoHeight / box.height);
+    const cropWidth = Math.min(videoWidth, scanWidth * scale);
+    const cropHeight = Math.min(videoHeight, scanHeight * scale);
+    return {
+      sx: Math.max(0, (videoWidth - cropWidth) / 2),
+      sy: Math.max(0, (videoHeight - cropHeight) / 2),
+      sw: cropWidth,
+      sh: cropHeight
+    };
+  }
 
-  cameraSelect.addEventListener('change', async () => {
-    if (stream) await startCamera();
+  async function startCamera(deviceId) {
+    stopCurrentStream();
+    lastText = '';
+    output.textContent = 'Scanned code: —';
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('Camera access requires HTTPS and a supported browser.');
+      return;
+    }
+
+    try {
+      const constraints = {
+        audio: false,
+        video: deviceId
+          ? { deviceId: { exact: deviceId } }
+          : { facingMode: { ideal: 'environment' } }
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings ? track.getSettings() : {};
+      activeDeviceId = settings.deviceId || deviceId || '';
+      await loadCameras();
+      if (activeDeviceId) picker.value = activeDeviceId;
+
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      torchButton.disabled = !capabilities.torch;
+      torchButton.textContent = capabilities.torch ? 'Toggle torch' : 'Torch not supported';
+
+      startButton.disabled = true;
+      stopButton.disabled = false;
+      scanning = true;
+      setStatus('Camera running. Selected camera is shown in the dropdown.');
+      if (window.ZXingBrowser?.BrowserMultiFormatReader) {
+        reader = new ZXingBrowser.BrowserMultiFormatReader();
+      } else {
+        reader = null;
+        setStatus('Camera running, but ZXing did not load. Check your internet connection.');
+      }
+      scanFrame();
+    } catch (error) {
+      stopCurrentStream();
+      startButton.disabled = false;
+      setStatus('Could not start camera: ' + error.message);
+    }
+  }
+
+  function scanFrame() {
+    if (!scanning || !video.videoWidth || !video.videoHeight) {
+      if (scanning) scanTimer = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    if (reader) {
+      try {
+        const crop = getCrop();
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(crop.sw));
+        canvas.height = Math.max(1, Math.round(crop.sh));
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
+        const result = reader.decodeFromCanvas(canvas);
+        if (result && result.getText) {
+          const text = result.getText();
+          if (text && text !== lastText) {
+            lastText = text;
+            output.textContent = 'Scanned code: ' + text;
+            setStatus('Barcode detected. Keep the code inside the rectangle.');
+          }
+        }
+      } catch (_) {
+        // No barcode in this frame is expected; continue scanning.
+      }
+    }
+    scanTimer = requestAnimationFrame(scanFrame);
+  }
+
+  picker.addEventListener('change', async () => {
+    const chosenId = picker.value;
+    if (!chosenId) return;
+    // Restart the stream with the selected device ID; do not merely change the dropdown label.
+    await startCamera(chosenId);
   });
 
-  window.addEventListener('pagehide', () => stopCamera(false));
+  startButton.addEventListener('click', async () => {
+    startButton.disabled = true;
+    await startCamera(picker.value || '');
+    if (!stream) startButton.disabled = false;
+  });
+
+  stopButton.addEventListener('click', () => {
+    stopCurrentStream();
+    startButton.disabled = false;
+    setStatus('Camera stopped.');
+  });
+
+  torchButton.addEventListener('click', async () => {
+    const track = stream?.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      torchOn = !torchOn;
+      await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+      torchButton.textContent = torchOn ? 'Turn torch off' : 'Toggle torch';
+    } catch (error) {
+      torchOn = false;
+      setStatus('Torch could not be changed: ' + error.message);
+    }
+  });
+
+  window.addEventListener('beforeunload', stopCurrentStream);
+  navigator.mediaDevices?.addEventListener?.('devicechange', loadCameras);
+  loadCameras();
 })();
 </script>
 </body>
