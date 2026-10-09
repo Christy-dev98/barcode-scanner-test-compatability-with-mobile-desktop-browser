@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mobile Camera Scanner Test</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: #17191c; color: #f5f5f5; }
+    main { width: min(100%, 760px); margin: 0 auto; }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    p { line-height: 1.45; color: #c9cdd2; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+    select, button { width: 100%; min-height: 44px; border: 1px solid #626a73; border-radius: 8px; padding: 10px; font: inherit; color: #fff; background: #2b3036; }
+    button { cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .viewer { position: relative; width: 100%; overflow: hidden; background: #000; border-radius: 12px; min-height: 220px; }
+    #mobileCamFeed { display: block; width: 100%; height: auto; max-height: 65vh; object-fit: contain; background: #000; }
+    .aimLayer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .aimWindow { width: 55%; height: 35%; min-height: 75px; border: 2px solid #fff; border-radius: 9px; box-shadow: 0 0 0 9999px rgba(0,0,0,.32); }
+    .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #252a30; overflow-wrap: anywhere; }
+    .result { font-size: 1.1rem; font-weight: 650; color: #9fe6ad; }
+    .hint { font-size: .9rem; }
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .controls { grid-template-columns: 1fr; }
+      #mobileCamFeed { max-height: 58vh; }
+      .aimWindow { width: 70%; height: 28%; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Mobile Camera Scanner Test</h1>
+  <p class="hint">Test camera permission and scan a barcode or QR code. Nothing is sent to a server.</p>
+
+  <div class="controls">
+    <button id="startCamTest" type="button">Start camera</button>
+    <button id="stopCamTest" type="button" disabled>Stop camera</button>
+    <select id="cameraChoiceTest" aria-label="Choose camera" disabled>
+      <option value="">Camera selection appears after permission</option>
+    </select>
+    <button id="torchToggleTest" type="button" disabled>Toggle flash</button>
+  </div>
+
+  <div class="viewer" id="cameraFrameTest">
+    <video id="mobileCamFeed" autoplay muted playsinline></video>
+    <div class="aimLayer" aria-hidden="true"><div class="aimWindow"></div></div>
+  </div>
+
+  <div class="status" id="cameraStatusTest" role="status" aria-live="polite">
+    Camera has not been started.
+  </div>
+  <div class="status">
+    <div>Last scanned value:</div>
+    <div class="result" id="scanOutputTest">—</div>
+  </div>
+  <p class="hint">For mobile testing, open this page using an HTTPS URL. Camera access generally will not work from an ordinary HTTP site or by opening the HTML file directly.</p>
+</main>
+
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js"></script>
+<script>
+(() => {
+  const video = document.getElementById('mobileCamFeed');
+  const cameraSelect = document.getElementById('cameraChoiceTest');
+  const startButton = document.getElementById('startCamTest');
+  const stopButton = document.getElementById('stopCamTest');
+  const torchButton = document.getElementById('torchToggleTest');
+  const status = document.getElementById('cameraStatusTest');
+  const output = document.getElementById('scanOutputTest');
+
+  let stream = null;
+  let reader = null;
+  let scanTimer = null;
+  let scanning = false;
+  let torchOn = false;
+  let canvas = document.createElement('canvas');
+  let context = canvas.getContext('2d', { willReadFrequently: true });
+  let lastValue = '';
+  let lastValueAt = 0;
+
+  function showStatus(message) {
+    status.textContent = message;
+  }
+
+  function getCrop(width, height) {
+    const cropWidth = Math.round(width * 0.55);
+    const cropHeight = Math.round(height * 0.35);
+    return {
+      x: Math.round((width - cropWidth) / 2),
+      y: Math.round((height - cropHeight) / 2),
+      width: cropWidth,
+      height: cropHeight
+    };
+  }
+
+  async function fillCameraList() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(device => device.kind === 'videoinput');
+    cameraSelect.innerHTML = '';
+
+    cameras.forEach((camera, index) => {
+      const option = document.createElement('option');
+      option.value = camera.deviceId;
+      option.textContent = camera.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+
+    const rear = cameras.find(camera => /back|rear|environment/i.test(camera.label));
+    if (rear) cameraSelect.value = rear.deviceId;
+
+    cameraSelect.disabled = cameras.length < 2;
+    if (!cameras.length) showStatus('No camera was found on this device.');
+  }
+
+  async function startCamera() {
+    if (!window.isSecureContext) {
+      showStatus('Camera access requires HTTPS (or localhost). Open this page from an HTTPS URL.');
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showStatus('This browser does not provide camera access. Try a current version of Chrome or Safari.');
+      return;
+    }
+
+    stopCamera(false);
+
+    try {
+      const chosenId = cameraSelect.value;
+      const constraints = {
+        audio: false,
+        video: chosenId
+          ? { deviceId: { exact: chosenId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      };
+
+      showStatus('Requesting camera permission…');
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+
+      if (!reader) {
+        if (!window.ZXingBrowser) throw new Error('ZXing library did not load. Check your internet connection.');
+        reader = new ZXingBrowser.BrowserMultiFormatReader();
+      }
+
+      await fillCameraList();
+      scanning = true;
+      startButton.disabled = true;
+      stopButton.disabled = false;
+      updateTorchAvailability();
+      showStatus('Camera is running. Place a code inside the center rectangle.');
+
+      scanFrame();
+    } catch (error) {
+      stopCamera(false);
+      if (error.name === 'NotAllowedError') {
+        showStatus('Camera permission was denied. Allow camera access in the browser/site settings, then try again.');
+      } else if (error.name === 'NotFoundError') {
+        showStatus('No suitable camera was found.');
+      } else if (error.name === 'NotReadableError') {
+        showStatus('The camera may already be in use by another app or browser tab.');
+      } else {
+        showStatus(`Could not start camera: ${error.message || error.name}`);
+      }
+      console.error(error);
+    }
+  }
+
+  function scanFrame() {
+    if (!scanning) return;
+
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 && video.videoHeight > 0) {
+      const crop = getCrop(video.videoWidth, video.videoHeight);
+      canvas.width = crop.width;
+      canvas.height = crop.height;
+
+      context.drawImage(
+        video,
+        crop.x, crop.y, crop.width, crop.height,
+        0, 0, crop.width, crop.height
+      );
+
+      try {
+        const result = reader.decodeFromCanvas(canvas);
+        const value = result?.getText()?.trim();
+
+        if (value) {
+          const now = Date.now();
+          if (value !== lastValue || now - lastValueAt > 1500) {
+            output.textContent = value;
+            lastValue = value;
+            lastValueAt = now;
+            showStatus('Code detected.');
+          }
+        }
+      } catch (_) {
+        // No code found in this frame; continue scanning.
+      }
+    }
+
+    scanTimer = setTimeout(scanFrame, 150);
+  }
+
+  function updateTorchAvailability() {
+    const track = stream?.getVideoTracks()[0];
+    let supported = false;
+
+    try {
+      supported = Boolean(track?.getCapabilities?.().torch);
+    } catch (_) {
+      supported = false;
+    }
+
+    torchButton.disabled = !supported;
+    torchButton.textContent = supported ? 'Turn flash on' : 'Flash not supported';
+  }
+
+  async function toggleTorch() {
+    const track = stream?.getVideoTracks()[0];
+    if (!track) return;
+
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
+      torchOn = !torchOn;
+      torchButton.textContent = torchOn ? 'Turn flash off' : 'Turn flash on';
+    } catch (error) {
+      showStatus(`Could not toggle flash: ${error.message || error.name}`);
+      updateTorchAvailability();
+    }
+  }
+
+  function stopCamera(updateMessage = true) {
+    scanning = false;
+    clearTimeout(scanTimer);
+    scanTimer = null;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    video.pause();
+    video.srcObject = null;
+    torchOn = false;
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    torchButton.disabled = true;
+    torchButton.textContent = 'Toggle flash';
+
+    if (updateMessage) showStatus('Camera stopped.');
+  }
+
+  startButton.addEventListener('click', startCamera);
+  stopButton.addEventListener('click', () => stopCamera());
+  torchButton.addEventListener('click', toggleTorch);
+
+  cameraSelect.addEventListener('change', async () => {
+    if (stream) await startCamera();
+  });
+
+  window.addEventListener('pagehide', () => stopCamera(false));
+})();
+</script>
+</body>
+</html>
