@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#23272b">
+  <title>Barcode Scanner Demo</title>
+  <style>
+    :root {
+      --page: #23272b;
+      --panel: #30353a;
+      --panel-2: #373d42;
+      --border: #454d53;
+      --text: #f4f6f8;
+      --muted: #b9c1c8;
+      --soft: #8f9ba4;
+      --blue: #1976d2;
+      --cyan: #17a2b8;
+      --teal-bg: #24424a;
+      --teal-border: #35616a;
+      --teal-text: #9de5ed;
+      --green: #2d9b68;
+      --amber: #d39e19;
+      --red: #d9534f;
+      --radius: 10px;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid #8bdde7;
+      outline-offset: 2px;
+    }
+    .page { width: min(1180px, 100%); margin: 0 auto; padding: 24px 20px 40px; }
+    .page-header { text-align: center; margin: 0 0 22px; }
+    .eyebrow { color: #9ec8d0; text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 1.8px; }
+    h1 { margin: 5px 0 6px; font-size: clamp(25px, 3vw, 32px); line-height: 1.2; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 14px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(330px, .9fr); gap: 20px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 5px 16px rgb(0 0 0 / 12%); }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+    .panel-header h2 { margin: 0; font-size: 16px; font-weight: 650; }
+    .panel-body { padding: 17px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 7px; color: #bdebd2; background: #234838; border: 1px solid #356b52; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #57cb8d; }
+    .scanner-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .camera-select { flex: 1 1 180px; min-width: 0; background: #252a2e; color: var(--text); border: 1px solid #515b63; padding: 9px 11px; border-radius: 6px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 6px; padding: 9px 13px; font-size: 13px; font-weight: 650; line-height: 1.2; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover { background: #1565b5; }
+    .btn-info { background: var(--cyan); color: #fff; }
+    .btn-info:hover { background: #138496; }
+    .btn-outline { background: transparent; border-color: #5b6972; color: #e6edf1; }
+    .btn-outline:hover { background: #414950; }
+    .btn-success { background: var(--green); color: white; }
+    .btn-success:hover { background: #258459; }
+    .btn-warning { background: var(--amber); color: #181a1b; }
+    .btn-warning:hover { background: #bd8c14; }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-sm { padding: 7px 10px; font-size: 12px; }
+    .video-container { position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 210px; max-height: 470px; overflow: hidden; border: 1px solid #4b555d; border-radius: 8px; background: #111518; }
+    #scannerVideo { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .video-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #9eaab2; text-align: center; padding: 20px; pointer-events: none; }
+    .video-placeholder strong { color: #dbe2e7; font-size: 14px; }
+    .video-placeholder small { max-width: 310px; font-size: 12px; }
+    .scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
+    .scan-box { width: 80%; height: 40%; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%); position: relative; }
+    .scan-box::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed rgb(255 255 255 / 65%); }
+    .scanner-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 11px; color: var(--soft); font-size: 12px; }
+    .camera-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+    .divider-label { display: flex; align-items: center; gap: 11px; margin: 18px 0 12px; color: var(--soft); font-size: 11px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; }
+    .divider-label::before, .divider-label::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+    .manual-row { display: flex; gap: 8px; }
+    .manual-row input { flex: 1; width: 100%; min-width: 0; background: #252a2e; color: var(--text); border: 1px solid #515b63; border-radius: 6px; padding: 10px 11px; }
+    .hint { color: var(--soft); font-size: 11px; margin: 8px 0 0; }
+    .empty-state { color: var(--muted); text-align: center; border: 1px dashed #515b63; border-radius: 8px; padding: 22px 14px; font-size: 13px; }
+    .item-card { display: none; background: var(--panel-2); border: 1px solid #4c555c; border-left: 4px solid #20b4c5; border-radius: 8px; padding: 15px; }
+    .item-main { display: flex; gap: 13px; align-items: flex-start; min-width: 0; }
+    .item-icon { width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; background: #173e5f; color: #dceaf5; border-radius: 7px; }
+    .item-copy { flex: 1; min-width: 0; }
+    .item-title { margin: 0 0 5px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+    .item-title strong { font-weight: 750; color: #fff; }
+    .item-title span { font-weight: 400; color: #d2d9de; }
+    .item-department { margin: 0 0 9px; font-size: 12px; color: #c3cbd1; overflow-wrap: anywhere; }
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+    .chip { display: inline-flex; align-items: center; max-width: 100%; padding: 4px 9px; border-radius: 4px; border: 1px solid var(--teal-border); background: var(--teal-bg); color: var(--teal-text); font-size: 11px; font-weight: 550; line-height: 1.35; overflow-wrap: anywhere; }
+    .item-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+    .item-actions .btn { flex: 0 0 auto; }
+    .sample-list { list-style: none; padding: 0; margin: 0; }
+    .sample-item { display: flex; align-items: flex-start; gap: 13px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+    .sample-item:last-child { border-bottom: 0; }
+    .sample-icon { width: 58px; height: 58px; min-width: 58px; display: grid; place-items: center; border-radius: 6px; background: #173e5f; color: #dceaf5; }
+    .sample-content { flex: 1; min-width: 0; }
+    .sample-title { margin: 0 0 4px; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+    .sample-title strong { color: #fff; }
+    .sample-desc { margin: 0 0 8px; color: #c3cbd1; font-size: 12px; overflow-wrap: anywhere; }
+    .sample-actions { margin-top: 10px; }
+    .sample-actions .btn { width: fit-content; }
+    .nothing-here { padding: 22px 17px; color: var(--muted); font-size: 13px; text-align: center; }
+    .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 50; background: rgb(0 0 0 / 65%); padding: 16px; }
+    .modal-backdrop.open { display: flex; }
+    .modal { width: min(690px, 100%); max-height: min(84vh, 700px); overflow: auto; background: #30353a; border: 1px solid #535d64; border-radius: 10px; box-shadow: 0 20px 60px rgb(0 0 0 / 35%); }
+    .modal-header, .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+    .modal-header h2 { margin: 0; font-size: 17px; }
+    .modal-footer { border-top: 1px solid var(--border); border-bottom: 0; justify-content: flex-end; }
+    .icon-button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; background: transparent; color: #dbe1e5; border: 1px solid #515b63; border-radius: 6px; }
+    .doc-table-wrap { padding: 15px 17px; overflow-x: auto; }
+    .doc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
+    .doc-table th, .doc-table td { padding: 11px 10px; text-align: left; border-bottom: 1px solid #485158; }
+    .doc-table th { color: #c4ccd2; font-weight: 650; background: #292e32; }
+    .doc-table td:last-child, .doc-table th:last-child { text-align: center; }
+    .toast-region { position: fixed; right: 18px; top: 18px; width: min(360px, calc(100vw - 36px)); z-index: 100; display: grid; gap: 10px; pointer-events: none; }
+    .toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: #f8f9fa; color: #24282b; border-left: 4px solid var(--cyan); border-radius: 7px; box-shadow: 0 8px 24px rgb(0 0 0 / 28%); animation: toastIn .18s ease-out; }
+    .toast.error { border-left-color: var(--red); }
+    .toast.success { border-left-color: var(--green); }
+    .toast strong { display: block; font-size: 13px; margin-bottom: 2px; }
+    .toast p { margin: 0; color: #4a5157; font-size: 12px; overflow-wrap: anywhere; }
+    .toast-close { margin-left: auto; border: 0; background: transparent; color: #6b7379; font-size: 18px; line-height: 1; padding: 0; }
+    .footer-note { color: var(--soft); text-align: center; margin: 18px 0 0; font-size: 11px; }
+    .hidden { display: none !important; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 820px) { .layout { grid-template-columns: minmax(0, 1fr); } .page { padding: 18px 14px 30px; } }
+    @media (max-width: 480px) {
+      .page { padding: 16px 10px 24px; }
+      .panel-header, .panel-body { padding: 13px; }
+      .scanner-toolbar { align-items: stretch; }
+      .scanner-toolbar .btn { flex: 1; }
+      .video-container { min-height: 190px; }
+      .manual-row { flex-direction: column; }
+      .manual-row .btn { width: 100%; }
+      .item-card { padding: 12px; }
+      .item-icon { width: 46px; height: 46px; flex-basis: 46px; }
+      .sample-item { padding: 13px; gap: 10px; }
+      .sample-icon { width: 46px; height: 46px; min-width: 46px; }
+      .item-actions .btn { flex: 1 1 40%; }
+      .scanner-footer { flex-direction: column; gap: 3px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div class="eyebrow">Interactive demo</div>
+      <h1>Scan a Barcode</h1>
+      <p class="subtitle">Scan a label or enter a sample code to test the interface.</p>
+    </header>
+
+    <div class="layout">
+      <section class="panel" aria-labelledby="scannerHeading">
+        <div class="panel-header">
+          <h2 id="scannerHeading">Barcode scanner</h2>
+          <span class="status-pill" id="scannerStatus"><span class="status-dot"></span><span id="scannerStatusText">Camera stopped</span></span>
+        </div>
+        <div class="panel-body">
+          <div class="scanner-toolbar">
+            <select id="cameraSelect" class="camera-select" aria-label="Choose camera" disabled>
+              <option value="">Camera selected automatically</option>
+            </select>
+            <button id="startCameraBtn" class="btn btn-primary" type="button">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+              Start camera
+            </button>
+            <button id="stopCameraBtn" class="btn btn-outline" type="button" disabled>Stop</button>
+            <button id="flashBtn" class="btn btn-outline hidden" type="button" aria-pressed="false" title="Toggle camera light">Flash off</button>
+          </div>
+
+          <div class="video-container" id="videoContainer">
+            <video id="scannerVideo" autoplay muted playsinline></video>
+            <div class="video-placeholder" id="videoPlaceholder">
+              <svg viewBox="0 0 64 64" width="43" height="43" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="15" width="48" height="34" rx="5"/><path d="M56 25l-12 7 12 7z"/><circle cx="26" cy="32" r="7"/></svg>
+              <strong>Camera preview will appear here</strong>
+              <small>Start the camera, then hold a barcode inside the white frame.</small>
+            </div>
+            <div class="scanner-overlay" aria-hidden="true"><div class="scan-box"></div></div>
+          </div>
+          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 80% × 40%</span></div>
+          <p class="camera-note">Camera access requires HTTPS or localhost and your browser's permission. The demo does not send scanned values to a server.</p>
+
+          <div class="divider-label">Or test without a camera</div>
+          <div class="manual-row">
+            <input id="manualBarcode" type="text" inputmode="text" autocomplete="off" placeholder="Enter a sample code (e.g. 1000055)" aria-label="Sample barcode value">
+            <button id="simulateScanBtn" class="btn btn-info" type="button">Simulate scan</button>
+          </div>
+          <p class="hint">Try: 1000055, 101173, 1040012, or 605428. Any other value will show generic demo data.</p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="selectedItemHeading">
+        <div class="panel-header">
+          <h2 id="selectedItemHeading">Scanned item</h2>
+          <span class="eyebrow" style="letter-spacing:1px">Local preview</span>
+        </div>
+        <div class="panel-body">
+          <div class="empty-state" id="selectedEmpty">Nothing scanned yet. Scan a barcode or enter a test code to see the item details here.</div>
+          <article class="item-card" id="selectedItemCard" aria-live="polite">
+            <div class="item-main">
+              <div class="item-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a5 5 0 0 0-6.6 6.6L3 18a2.1 2.1 0 0 0 3 3l5.1-5.1a5 5 0 0 0 6.6-6.6l-3.2 3.2-3-3z"/></svg>
+              </div>
+              <div class="item-copy">
+                <h3 class="item-title" id="selectedItemName"><strong>Sample item</strong><span> - Model</span></h3>
+                <p class="item-department" id="selectedItemDepartment">Sample department</p>
+                <div class="chips">
+                  <span class="chip" id="selectedItemType">Equipment type</span>
+                  <span class="chip" id="selectedItemStatus">Available</span>
+                </div>
+              </div>
+            </div>
+            <div class="item-actions" id="selectedItemActions"></div>
+          </article>
+          <p class="hint" style="margin-top:12px">Lend and return only change the local demo state. Nothing is saved or sent to an API.</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:20px" aria-labelledby="recentHeading">
+      <div class="panel-header">
+        <h2 id="recentHeading">Recent items</h2>
+        <span class="eyebrow" style="letter-spacing:1px">Sample data</span>
+      </div>
+      <ul class="sample-list" id="recentItemsList"></ul>
+      <div class="nothing-here hidden" id="recentEmpty">No items to show.</div>
+    </section>
+
+    <p class="footer-note">Standalone demo · No application name · No API calls · Camera scanning uses ZXing in the browser</p>
+  </main>
+
+  <div class="modal-backdrop" id="documentsModal" role="dialog" aria-modal="true" aria-labelledby="documentsTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="documentsTitle">Related documents</h2>
+        <button class="icon-button" id="closeModalX" type="button" aria-label="Close dialog">×</button>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Document name</th><th>Type</th><th>Action</th></tr></thead>
+          <tbody id="documentsTableBody"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" id="closeModalBtn" type="button">Close</button></div>
+    </div>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+  <script>
+    'use strict';
+
+    // Demo-only data: this page makes no API requests.
+    const demoItems = {
+      '1000055': { code: '1000055', name: 'Torque wrench', model: '140–760 Nm', department: 'Mechanical Development', type: 'Measuring tool', status: 'Available', isLent: false },
+      '101173':  { code: '101173', name: 'Assembly tool', model: 'AT-200', department: 'Production', type: 'Workshop tool', status: 'On loan', isLent: true },
+      '1040012': { code: '1040012', name: 'Torque wrench', model: 'TW-450', department: 'Manufacturing', type: 'Measuring tool', status: 'Available', isLent: false },
+      '605428':  { code: '605428', name: 'Inspection device', model: 'ID-08', department: 'Quality Control', type: 'Inspection tool', status: 'Available', isLent: false }
+    };
+
+    const demoDocuments = [
+      { name: 'Operating instructions.pdf', type: 'PDF' },
+      { name: 'Inspection report.pdf', type: 'PDF' },
+      { name: 'Item overview.png', type: 'PNG' }
+    ];
+
+    const video = document.getElementById('scannerVideo');
+    const videoContainer = document.getElementById('videoContainer');
+    const videoPlaceholder = document.getElementById('videoPlaceholder');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const stopCameraBtn = document.getElementById('stopCameraBtn');
+    const flashBtn = document.getElementById('flashBtn');
+    const scanMessage = document.getElementById('scanMessage');
+    const scannerStatusText = document.getElementById('scannerStatusText');
+    const manualBarcode = document.getElementById('manualBarcode');
+
+    let reader = null;
+    let cameraStream = null;
+    let scanTimer = null;
+    let isScanning = false;
+    let torchIsOn = false;
+    let currentItem = null;
+    let lastScannedValue = '';
+    let lastScanTime = 0;
+    let processingScan = false;
+    let recentCodes = [];
+    let lastDecodeError = '';
+
+    function toast(title, message, type = 'info') {
+      const region = document.getElementById('toastRegion');
+      const card = document.createElement('div');
+      card.className = `toast ${type === 'error' ? 'error' : type === 'success' ? 'success' : ''}`.trim();
+      const copy = document.createElement('div');
+      const heading = document.createElement('strong');
+      heading.textContent = title;
+      const body = document.createElement('p');
+      body.textContent = message;
+      copy.append(heading, body);
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'toast-close';
+      close.setAttribute('aria-label', 'Dismiss notification');
+      close.textContent = '×';
+      close.addEventListener('click', () => card.remove());
+      card.append(copy, close);
+      region.appendChild(card);
+      window.setTimeout(() => card.remove(), 4800);
+    }
+
+    function setCameraUi(active) {
+      startCameraBtn.disabled = active;
+      stopCameraBtn.disabled = !active;
+      cameraSelect.disabled = !active || cameraSelect.options.length < 2;
+      videoPlaceholder.classList.toggle('hidden', active);
+      scannerStatusText.textContent = active ? 'Camera running' : 'Camera stopped';
+      scanMessage.textContent = active ? 'Point the barcode inside the white frame.' : 'Camera has not started.';
+    }
+
+    function getReader() {
+      if (typeof ZXingBrowser === 'undefined') {
+        throw new Error('ZXing did not load. Check your internet connection, or serve the library locally.');
+      }
+      if (typeof ZXingBrowser.BrowserMultiFormatReader !== 'function') {
+        throw new Error('ZXing multi-format reader is unavailable.');
+      }
+      return new ZXingBrowser.BrowserMultiFormatReader();
+    }
+
+    // Calculates a centre crop that corresponds to the visible video when object-fit: cover is used.
+    function getScanRegion(sourceWidth, sourceHeight) {
+      const rect = video.getBoundingClientRect();
+      const viewportRatio = rect.width / Math.max(rect.height, 1);
+      const sourceRatio = sourceWidth / sourceHeight;
+      let visibleX = 0;
+      let visibleY = 0;
+      let visibleWidth = sourceWidth;
+      let visibleHeight = sourceHeight;
+
+      if (sourceRatio > viewportRatio) {
+        visibleWidth = sourceHeight * viewportRatio;
+        visibleX = (sourceWidth - visibleWidth) / 2;
+      } else {
+        visibleHeight = sourceWidth / viewportRatio;
+        visibleY = (sourceHeight - visibleHeight) / 2;
+      }
+
+      const cropWidth = Math.max(1, Math.round(visibleWidth * 0.8));
+      const cropHeight = Math.max(1, Math.round(visibleHeight * 0.4));
+      return {
+        x: Math.max(0, Math.round(visibleX + (visibleWidth - cropWidth) / 2)),
+        y: Math.max(0, Math.round(visibleY + (visibleHeight - cropHeight) / 2)),
+        width: Math.min(cropWidth, sourceWidth),
+        height: Math.min(cropHeight, sourceHeight)
+      };
+    }
+
+    function isExpectedDecodeMiss(error) {
+      const details = [error?.name, error?.constructor?.name, error?.message].filter(Boolean).join(' ');
+      return /NotFoundException|ChecksumException|FormatException|No MultiFormat Readers were able to detect the code/i.test(details);
+    }
+
+    async function listCameras() {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter(device => device.kind === 'videoinput');
+        cameraSelect.replaceChildren();
+        cameras.forEach((camera, index) => {
+          const option = document.createElement('option');
+          option.value = camera.deviceId;
+          option.textContent = camera.label || `Camera ${index + 1}`;
+          cameraSelect.appendChild(option);
+        });
+        const liveId = cameraStream?.getVideoTracks()[0]?.getSettings()?.deviceId;
+        const rear = cameras.find(camera => /back|rear|environment|facing back/i.test(camera.label));
+        const preferred = cameras.find(camera => camera.deviceId === liveId) || rear || cameras[0];
+        if (preferred) cameraSelect.value = preferred.deviceId;
+        cameraSelect.disabled = !isScanning || cameras.length < 2;
+      } catch (error) {
+        console.warn('Unable to list cameras:', error);
+      }
+    }
+
+    async function startCamera(deviceId = null) {
+      if (isScanning) return;
+      try {
+        reader = getReader();
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Camera access is unavailable in this browser. Use HTTPS or localhost.');
+        }
+        const videoConstraints = deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+
+        cameraStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
+        video.srcObject = cameraStream;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        await video.play();
+
+        isScanning = true;
+        setCameraUi(true);
+        await listCameras();
+        updateFlashAvailability();
+        scanLoop();
+        toast('Camera started', 'Scanning is active. Hold a barcode inside the white frame.', 'success');
+      } catch (error) {
+        stopCamera(false);
+        console.error('Unable to start camera:', error);
+        toast('Camera unavailable', error?.message || 'Check camera permissions and try again.', 'error');
+      }
+    }
+
+    const scanCanvas = document.createElement('canvas');
+    const scanContext = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+    function scanLoop() {
+      if (!isScanning) return;
+      try {
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+          if (!scanContext) throw new Error('Unable to create the scan canvas.');
+          const region = getScanRegion(video.videoWidth, video.videoHeight);
+          scanCanvas.width = region.width;
+          scanCanvas.height = region.height;
+          scanContext.drawImage(video, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height);
+
+          try {
+            const result = reader.decodeFromCanvas(scanCanvas);
+            const value = result?.getText?.();
+            if (value) {
+              lastDecodeError = '';
+              processScannedValue(value, 'camera');
+            }
+          } catch (error) {
+            // No barcode in an individual frame is expected during continuous scanning.
+            if (!isExpectedDecodeMiss(error)) {
+              const message = error?.message || String(error);
+              if (message !== lastDecodeError) {
+                console.error('Barcode decode error:', error);
+                lastDecodeError = message;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        const message = error?.message || String(error);
+        if (message !== lastDecodeError) {
+          console.error('Scanner frame error:', error);
+          lastDecodeError = message;
+        }
+      } finally {
+        if (isScanning) scanTimer = window.setTimeout(scanLoop, 160);
+      }
+    }
+
+    function stopCamera(showToast = true) {
+      isScanning = false;
+      if (scanTimer !== null) window.clearTimeout(scanTimer);
+      scanTimer = null;
+      cameraStream?.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+      if (video) {
+        video.pause();
+        video.srcObject = null;
+      }
+      torchIsOn = false;
+      flashBtn.textContent = 'Flash off';
+      flashBtn.setAttribute('aria-pressed', 'false');
+      flashBtn.classList.add('hidden');
+      setCameraUi(false);
+      if (showToast) toast('Camera stopped', 'The camera has been released.');
+    }
+
+    async function restartCamera(deviceId) {
+      stopCamera(false);
+      await new Promise(resolve => window.setTimeout(resolve, 180));
+      await startCamera(deviceId || null);
+    }
+
+    function updateFlashAvailability() {
+      const track = cameraStream?.getVideoTracks()[0];
+      let supported = false;
+      try { supported = Boolean(track?.getCapabilities?.().torch); } catch { supported = false; }
+      flashBtn.classList.toggle('hidden', !supported);
+      if (!supported) torchIsOn = false;
+    }
+
+    async function toggleFlash() {
+      const track = cameraStream?.getVideoTracks()[0];
+      if (!track) return;
+      try {
+        if (!track.getCapabilities?.().torch) {
+          toast('Flash unavailable', 'This camera or browser does not expose torch control.');
+          flashBtn.classList.add('hidden');
+          return;
+        }
+        torchIsOn = !torchIsOn;
+        await track.applyConstraints({ advanced: [{ torch: torchIsOn }] });
+        flashBtn.textContent = torchIsOn ? 'Flash on' : 'Flash off';
+        flashBtn.setAttribute('aria-pressed', String(torchIsOn));
+      } catch (error) {
+        console.warn('Unable to toggle flash:', error);
+        toast('Flash unavailable', 'The camera could not switch its light.');
+        updateFlashAvailability();
+      }
+    }
+
+    function getItemForCode(value) {
+      const code = String(value).trim();
+      const original = demoItems[code];
+      if (original) return { ...original };
+      return {
+        code,
+        name: 'Demo item',
+        model: 'Sample model',
+        department: 'Demo department',
+        type: 'Other equipment',
+        status: 'Available',
+        isLent: false
+      };
+    }
+
+    function processScannedValue(value, source = 'manual') {
+      const code = String(value ?? '').trim();
+      if (!code) {
+        toast('No barcode entered', 'Enter a code or scan a barcode first.', 'error');
+        return;
+      }
+      if (processingScan) return;
+      const now = Date.now();
+      if (code === lastScannedValue && now - lastScanTime < 1600) return;
+      if (currentItem?.code === code) {
+        if (source === 'manual') toast('Already selected', `Item ${code} is already displayed.`);
+        return;
+      }
+
+      processingScan = true;
+      lastScannedValue = code;
+      lastScanTime = now;
+      currentItem = getItemForCode(code);
+      renderSelectedItem();
+      addToRecent(currentItem);
+      toast('Barcode detected', `Code: ${code}${source === 'camera' ? ' · camera scan' : ' · simulated scan'}`, 'success');
+      scanMessage.textContent = `Last detected code: ${code}`;
+      manualBarcode.value = '';
+      processingScan = false;
+    }
+
+    function renderSelectedItem() {
+      const empty = document.getElementById('selectedEmpty');
+      const card = document.getElementById('selectedItemCard');
+      empty.classList.add('hidden');
+      card.style.display = 'block';
+
+      const title = document.getElementById('selectedItemName');
+      title.replaceChildren();
+      const strong = document.createElement('strong');
+      strong.textContent = currentItem.name;
+      const model = document.createElement('span');
+      model.textContent = ` - ${currentItem.model}`;
+      title.append(strong, model);
+      document.getElementById('selectedItemDepartment').textContent = `${currentItem.department} · Code ${currentItem.code}`;
+      document.getElementById('selectedItemType').textContent = currentItem.type || 'Other equipment';
+      document.getElementById('selectedItemStatus').textContent = currentItem.isLent ? 'On loan' : 'Available';
+
+      const actions = document.getElementById('selectedItemActions');
+      actions.replaceChildren();
+      if (currentItem.isLent) {
+        actions.appendChild(makeButton('Return item', 'btn btn-warning', () => changeLoanState(false)));
+      } else {
+        actions.appendChild(makeButton('Lend item', 'btn btn-success', () => changeLoanState(true)));
+        actions.appendChild(makeButton('Documents', 'btn btn-info', () => openDocuments(currentItem.code)));
+      }
+    }
+
+    function makeButton(label, className, callback) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `btn ${className}`;
+      button.textContent = label;
+      button.addEventListener('click', callback);
+      return button;
+    }
+
+    function changeLoanState(isLent) {
+      if (!currentItem) return;
+      currentItem.isLent = isLent;
+      currentItem.status = isLent ? 'On loan' : 'Available';
+      demoItems[currentItem.code] = { ...currentItem };
+      renderSelectedItem();
+      addToRecent(currentItem);
+      toast(isLent ? 'Item lent (demo)' : 'Item returned (demo)', `${currentItem.name} · ${currentItem.code}. This change exists only in this page.`, 'success');
+    }
+
+    function addToRecent(item) {
+      const copy = { ...item };
+      recentCodes = [copy, ...recentCodes.filter(existing => existing.code !== copy.code)].slice(0, 8);
+      renderRecentList();
+    }
+
+    function renderRecentList() {
+      const list = document.getElementById('recentItemsList');
+      const empty = document.getElementById('recentEmpty');
+      list.replaceChildren();
+      empty.classList.toggle('hidden', recentCodes.length > 0);
+
+      recentCodes.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'sample-item';
+        const icon = document.createElement('div');
+        icon.className = 'sample-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = '<svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a5 5 0 0 0-6.6 6.6L3 18a2.1 2.1 0 0 0 3 3l5.1-5.1a5 5 0 0 0 6.6-6.6l-3.2 3.2-3-3z"/></svg>';
+        const content = document.createElement('div');
+        content.className = 'sample-content';
+        const title = document.createElement('p');
+        title.className = 'sample-title';
+        const strong = document.createElement('strong');
+        strong.textContent = item.name;
+        title.append(strong, document.createTextNode(` - ${item.model}`));
+        const description = document.createElement('p');
+        description.className = 'sample-desc';
+        description.textContent = `${item.department} · Code ${item.code}`;
+        const chips = document.createElement('div');
+        chips.className = 'chips';
+        chips.append(makeChip(item.type), makeChip(item.status));
+        const actions = document.createElement('div');
+        actions.className = 'sample-actions';
+        actions.appendChild(makeButton('Open documents', 'btn btn-info btn-sm', () => openDocuments(item.code)));
+        content.append(title, description, chips, actions);
+        li.append(icon, content);
+        list.appendChild(li);
+      });
+    }
+
+    function makeChip(text) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = text || '-';
+      return chip;
+    }
+
+    function openDocuments(code) {
+      const item = getItemForCode(code);
+      document.getElementById('documentsTitle').textContent = `Related documents · ${item.code}`;
+      const tbody = document.getElementById('documentsTableBody');
+      tbody.replaceChildren();
+      demoDocuments.forEach(doc => {
+        const tr = document.createElement('tr');
+        const name = document.createElement('td');
+        name.textContent = doc.name;
+        const type = document.createElement('td');
+        type.textContent = doc.type;
+        const action = document.createElement('td');
+        action.appendChild(makeButton('Open', 'btn btn-primary btn-sm', () => {
+          closeDocuments();
+          toast('Demo document', `${doc.name} for code ${item.code}. No file was downloaded or opened.`, 'success');
+        }));
+        tr.append(name, type, action);
+        tbody.appendChild(tr);
+      });
+      document.getElementById('documentsModal').classList.add('open');
+      document.getElementById('closeModalX').focus();
+    }
+
+    function closeDocuments() {
+      document.getElementById('documentsModal').classList.remove('open');
+    }
+
+    startCameraBtn.addEventListener('click', () => startCamera());
+    stopCameraBtn.addEventListener('click', () => stopCamera());
+    flashBtn.addEventListener('click', toggleFlash);
+    cameraSelect.addEventListener('change', () => {
+      if (cameraSelect.value) restartCamera(cameraSelect.value);
+    });
+    document.getElementById('simulateScanBtn').addEventListener('click', () => processScannedValue(manualBarcode.value, 'manual'));
+    manualBarcode.addEventListener('keydown', event => {
+      if (event.key === 'Enter') processScannedValue(manualBarcode.value, 'manual');
+    });
+    document.getElementById('closeModalX').addEventListener('click', closeDocuments);
+    document.getElementById('closeModalBtn').addEventListener('click', closeDocuments);
+    document.getElementById('documentsModal').addEventListener('click', event => {
+      if (event.target.id === 'documentsModal') closeDocuments();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeDocuments();
+    });
+
+    window.addEventListener('pagehide', () => {
+      stopCamera(false);
+    });
+
+    setCameraUi(false);
+    recentCodes = Object.values(demoItems).map(item => ({ ...item }));
+    renderRecentList();
+  </script>
+</body>
+</html>
