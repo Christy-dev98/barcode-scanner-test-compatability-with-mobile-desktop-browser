@@ -73,7 +73,7 @@
     .video-placeholder strong { color: #dbe2e7; font-size: 14px; }
     .video-placeholder small { max-width: 310px; font-size: 12px; }
     .scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
-    .scan-box { width: 80%; height: 40%; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%); position: relative; }
+    .scan-box { width: 55%; height: 40%; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%); position: relative; }
     .scan-box::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed rgb(255 255 255 / 65%); }
     .scanner-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 11px; color: var(--soft); font-size: 12px; }
     .camera-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
@@ -183,8 +183,8 @@
             </div>
             <div class="scanner-overlay" aria-hidden="true"><div class="scan-box"></div></div>
           </div>
-          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 80% × 40%</span></div>
-          <p class="camera-note">Camera access requires HTTPS or localhost and your browser's permission. The demo does not send scanned values to a server.</p>
+          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 55% × 40%</span></div>
+          <p class="camera-note">Tap Start camera to request access the first time. On iPhone, if access was previously denied, allow Camera in this site’s browser settings and reload. Camera access requires HTTPS or localhost. The demo does not send scanned values to a server.</p>
 
           <div class="divider-label">Or test without a camera</div>
           <div class="manual-row">
@@ -253,7 +253,7 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
 
- <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script>
     'use strict';
 
@@ -328,10 +328,13 @@
       if (typeof ZXingBrowser === 'undefined') {
         throw new Error('ZXing did not load. Check your internet connection, or serve the library locally.');
       }
-      if (typeof ZXingBrowser.BrowserMultiFormatReader !== 'function') {
-        throw new Error('ZXing multi-format reader is unavailable.');
+      if (typeof ZXingBrowser.BrowserMultiFormatReader === 'function') {
+        return new ZXingBrowser.BrowserMultiFormatReader();
       }
-      return new ZXingBrowser.BrowserMultiFormatReader();
+      if (typeof ZXingBrowser.BrowserMultiFormatOneDReader === 'function') {
+        return new ZXingBrowser.BrowserMultiFormatOneDReader();
+      }
+      throw new Error('ZXing browser reader is unavailable.');
     }
 
     // Calculates a centre crop that corresponds to the visible video when object-fit: cover is used.
@@ -352,7 +355,7 @@
         visibleY = (sourceHeight - visibleHeight) / 2;
       }
 
-      const cropWidth = Math.max(1, Math.round(visibleWidth * 0.8));
+      const cropWidth = Math.max(1, Math.round(visibleWidth * 0.55));
       const cropHeight = Math.max(1, Math.round(visibleHeight * 0.4));
       return {
         x: Math.max(0, Math.round(visibleX + (visibleWidth - cropWidth) / 2)),
@@ -416,7 +419,15 @@
       } catch (error) {
         stopCamera(false);
         console.error('Unable to start camera:', error);
-        toast('Camera unavailable', error?.message || 'Check camera permissions and try again.', 'error');
+        let message = error?.message || 'Check camera permissions and try again.';
+        if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+          message = 'Camera permission was denied or blocked. Allow camera access for this website in your browser settings, reload, and tap Start camera again.';
+        } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+          message = 'No camera was found or the browser could not access one.';
+        } else if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
+          message = 'The camera is busy in another app or could not be started. Close other apps using the camera and retry.';
+        }
+        toast('Camera unavailable', message, 'error');
       }
     }
 
@@ -458,7 +469,7 @@
           lastDecodeError = message;
         }
       } finally {
-        if (isScanning) scanTimer = window.setTimeout(scanLoop, 160);
+        if (isScanning) scanTimer = window.setTimeout(scanLoop, 150);
       }
     }
 
@@ -697,6 +708,16 @@
 
     window.addEventListener('pagehide', () => {
       stopCamera(false);
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      // iOS may suspend camera/video while Safari is backgrounded.
+      // Release it so the user can tap Start camera again when returning.
+      if (document.hidden && isScanning) {
+        stopCamera(false);
+        scanMessage.textContent = 'Camera paused. Tap Start camera to resume.';
+        toast('Camera paused', 'Tap Start camera when you return to this page.');
+      }
     });
 
     setCameraUi(false);
