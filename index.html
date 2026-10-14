@@ -51,6 +51,12 @@
     .status-pill { display: inline-flex; align-items: center; gap: 7px; color: #bdebd2; background: #234838; border: 1px solid #356b52; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #57cb8d; }
     .scanner-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .zoom-control { margin: 0 0 12px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 7px; background: #282d31; }
+    .zoom-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: 12px; }
+    .zoom-heading label { color: var(--muted); font-weight: 650; }
+    .zoom-heading output { color: var(--teal-text); font-weight: 700; }
+    #cameraZoomRange { display: block; width: 100%; accent-color: var(--cyan); }
+    .zoom-help { margin: 5px 0 0; color: var(--soft); font-size: 11px; }
     .camera-select { flex: 1 1 180px; min-width: 0; background: #252a2e; color: var(--text); border: 1px solid #515b63; padding: 9px 11px; border-radius: 6px; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 6px; padding: 9px 13px; font-size: 13px; font-weight: 650; line-height: 1.2; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
     .btn:active { transform: translateY(1px); }
@@ -174,6 +180,15 @@
             <button id="flashBtn" class="btn btn-outline hidden" type="button" aria-pressed="false" title="Toggle camera light">Flash off</button>
           </div>
 
+          <div class="zoom-control hidden" id="zoomControl">
+            <div class="zoom-heading">
+              <label for="cameraZoomRange">Camera zoom</label>
+              <output id="cameraZoomValue" for="cameraZoomRange">1×</output>
+            </div>
+            <input id="cameraZoomRange" type="range" min="1" max="2" step="0.1" value="1" aria-label="Camera zoom level">
+            <p class="zoom-help">Use zoom if the barcode is too small at a comfortable distance. This control appears only if the phone browser exposes camera zoom.</p>
+          </div>
+
           <div class="video-container" id="videoContainer">
             <video id="scannerVideo" autoplay muted playsinline></video>
             <div class="video-placeholder" id="videoPlaceholder">
@@ -286,6 +301,9 @@
     const scanMessage = document.getElementById('scanMessage');
     const scannerStatusText = document.getElementById('scannerStatusText');
     const manualBarcode = document.getElementById('manualBarcode');
+    const zoomControl = document.getElementById('zoomControl');
+    const cameraZoomRange = document.getElementById('cameraZoomRange');
+    const cameraZoomValue = document.getElementById('cameraZoomValue');
 
     let reader = null;
     let cameraStream = null;
@@ -434,6 +452,7 @@
         video.setAttribute('playsinline', '');
         await video.play();
         await tryEnableContinuousFocus();
+        await configureCameraZoom();
 
         const activeTrack = cameraStream.getVideoTracks()[0];
         const activeSettings = activeTrack?.getSettings?.();
@@ -504,6 +523,60 @@
       }
     }
 
+    async function configureCameraZoom() {
+      const track = cameraStream?.getVideoTracks()[0];
+      let zoomRange;
+
+      try {
+        zoomRange = track?.getCapabilities?.().zoom;
+      } catch (error) {
+        console.info('Camera zoom capabilities are unavailable:', error?.message || error);
+      }
+
+      if (!zoomRange || typeof zoomRange.min !== 'number' ||
+          typeof zoomRange.max !== 'number' || zoomRange.max <= zoomRange.min) {
+        zoomControl.classList.add('hidden');
+        return;
+      }
+
+      cameraZoomRange.min = String(zoomRange.min);
+      cameraZoomRange.max = String(zoomRange.max);
+      cameraZoomRange.step = String(zoomRange.step > 0 ? zoomRange.step : 0.1);
+
+      const currentZoom = track.getSettings?.().zoom;
+      // Start at a modest 2x zoom when available; users can adjust it below.
+      const targetZoom = Math.max(
+        zoomRange.min,
+        Math.min(zoomRange.max, Math.max(currentZoom ?? zoomRange.min, Math.min(2, zoomRange.max)))
+      );
+
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+        cameraZoomRange.value = String(targetZoom);
+      } catch (error) {
+        console.info('Could not set initial camera zoom; manual adjustment may still work:', error?.message || error);
+        cameraZoomRange.value = String(currentZoom ?? zoomRange.min);
+      }
+
+      cameraZoomValue.textContent = `${Number(cameraZoomRange.value).toFixed(1).replace(/\.0$/, '')}×`;
+      zoomControl.classList.remove('hidden');
+    }
+
+    async function applyCameraZoom() {
+      const track = cameraStream?.getVideoTracks()[0];
+      if (!track) return;
+
+      const zoom = Number(cameraZoomRange.value);
+      cameraZoomValue.textContent = `${zoom.toFixed(1).replace(/\.0$/, '')}×`;
+
+      try {
+        await track.applyConstraints({ advanced: [{ zoom }] });
+      } catch (error) {
+        console.warn('Unable to change camera zoom:', error);
+        toast('Zoom unavailable', 'This camera/browser could not apply that zoom level.', 'error');
+      }
+    }
+
     function stopCamera(showToast = true) {
       isScanning = false;
       if (scanTimer !== null) window.clearTimeout(scanTimer);
@@ -518,6 +591,7 @@
       flashBtn.textContent = 'Flash off';
       flashBtn.setAttribute('aria-pressed', 'false');
       flashBtn.classList.add('hidden');
+      zoomControl.classList.add('hidden');
       setCameraUi(false);
       if (showToast) toast('Camera stopped', 'The camera has been released.');
     }
@@ -717,6 +791,12 @@
     function closeDocuments() {
       document.getElementById('documentsModal').classList.remove('open');
     }
+
+    cameraZoomRange.addEventListener('input', () => {
+      const zoom = Number(cameraZoomRange.value);
+      cameraZoomValue.textContent = `${zoom.toFixed(1).replace(/\.0$/, '')}×`;
+    });
+    cameraZoomRange.addEventListener('change', applyCameraZoom);
 
     startCameraBtn.addEventListener('click', () => startCamera());
     stopCameraBtn.addEventListener('click', () => stopCamera());
