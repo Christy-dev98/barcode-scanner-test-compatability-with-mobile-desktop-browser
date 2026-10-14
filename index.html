@@ -194,12 +194,12 @@
             <div class="video-placeholder" id="videoPlaceholder">
               <svg viewBox="0 0 64 64" width="43" height="43" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="15" width="48" height="34" rx="5"/><path d="M56 25l-12 7 12 7z"/><circle cx="26" cy="32" r="7"/></svg>
               <strong>Camera preview will appear here</strong>
-              <small>Start the camera, then hold a barcode inside the white frame.</small>
+              <small>Start the camera, then hold a barcode clearly in view.</small>
             </div>
             <div class="scanner-overlay" aria-hidden="true"><div class="scan-box"></div></div>
           </div>
-          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 90% × 55%</span></div>
-          <p class="camera-note">Tap Start camera to request access the first time. On iPhone, if access was previously denied, allow Camera in this site’s browser settings and reload. Camera access requires HTTPS or localhost. The demo does not send scanned values to a server.</p>
+          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>White frame: visual guide</span></div>
+          <p class="camera-note">Tap Start camera to request access the first time. On iPhone, if access was previously denied, allow Camera in this site’s browser settings and reload. Camera access requires HTTPS or localhost. The white frame is a visual guide only: ZXing’s built-in continuous scanner decodes the video preview without this page manually cropping frames. The demo does not send scanned values to a server.</p>
 
           <div class="divider-label">Or test without a camera</div>
           <div class="manual-row">
@@ -272,11 +272,7 @@
   <script>
     'use strict';
 
-    // Keep the visible scan box and the decoded crop in sync.
-    const SCAN_REGION = { width: 0.9, height: 0.55 };
-    document.documentElement.style.setProperty('--scan-region-width', `${SCAN_REGION.width * 100}%`);
-    document.documentElement.style.setProperty('--scan-region-height', `${SCAN_REGION.height * 100}%`);
-
+    // The white frame is a visual guide only; ZXing handles full-video decoding.
     // Demo-only data: this page makes no API requests.
     const demoItems = {
       '1000055': { code: '1000055', name: 'Torque wrench', model: '140–760 Nm', department: 'Mechanical Development', type: 'Measuring tool', status: 'Available', isLent: false },
@@ -307,7 +303,7 @@
 
     let reader = null;
     let cameraStream = null;
-    let scanTimer = null;
+    let scannerControls = null;
     let isScanning = false;
     let torchIsOn = false;
     let currentItem = null;
@@ -344,7 +340,7 @@
       cameraSelect.disabled = !active || cameraSelect.options.length < 2;
       videoPlaceholder.classList.toggle('hidden', active);
       scannerStatusText.textContent = active ? 'Camera running' : 'Camera stopped';
-      scanMessage.textContent = active ? 'Point the barcode inside the white frame.' : 'Camera has not started.';
+      scanMessage.textContent = active ? 'Keep the barcode visible in the camera preview.' : 'Camera has not started.';
     }
 
     function getReader() {
@@ -358,34 +354,6 @@
         return new ZXingBrowser.BrowserMultiFormatOneDReader();
       }
       throw new Error('ZXing browser reader is unavailable.');
-    }
-
-    // Calculates a centre crop that corresponds to the visible video when object-fit: cover is used.
-    function getScanRegion(sourceWidth, sourceHeight) {
-      const rect = video.getBoundingClientRect();
-      const viewportRatio = rect.width / Math.max(rect.height, 1);
-      const sourceRatio = sourceWidth / sourceHeight;
-      let visibleX = 0;
-      let visibleY = 0;
-      let visibleWidth = sourceWidth;
-      let visibleHeight = sourceHeight;
-
-      if (sourceRatio > viewportRatio) {
-        visibleWidth = sourceHeight * viewportRatio;
-        visibleX = (sourceWidth - visibleWidth) / 2;
-      } else {
-        visibleHeight = sourceWidth / viewportRatio;
-        visibleY = (sourceHeight - visibleHeight) / 2;
-      }
-
-      const cropWidth = Math.max(1, Math.round(visibleWidth * SCAN_REGION.width));
-      const cropHeight = Math.max(1, Math.round(visibleHeight * SCAN_REGION.height));
-      return {
-        x: Math.max(0, Math.round(visibleX + (visibleWidth - cropWidth) / 2)),
-        y: Math.max(0, Math.round(visibleY + (visibleHeight - cropHeight) / 2)),
-        width: Math.min(cropWidth, sourceWidth),
-        height: Math.min(cropHeight, sourceHeight)
-      };
     }
 
     function isExpectedDecodeMiss(error) {
@@ -436,36 +404,82 @@
 
     async function startCamera(deviceId = null) {
       if (isScanning) return;
+
+      startCameraBtn.disabled = true;
+      scannerStatusText.textContent = 'Requesting camera permission…';
+      scanMessage.textContent = 'Waiting for camera permission…';
+
       try {
         reader = getReader();
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error('Camera access is unavailable in this browser. Use HTTPS or localhost.');
         }
-        const videoConstraints = deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } };
 
-        cameraStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
-        video.srcObject = cameraStream;
+        const videoConstraints = deviceId
+          ? {
+              deviceId: { exact: deviceId },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              frameRate: { ideal: 30 }
+            }
+          : {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              frameRate: { ideal: 30 }
+            };
+
+        // Use ZXing Browser's built-in continuous video scanner.
+        // It owns the frame capture/decoding loop; this page does not create a canvas.
+        isScanning = true;
+        scannerControls = await reader.decodeFromConstraints(
+          {
+            audio: false,
+            video: videoConstraints
+          },
+          video,
+          (result, error) => {
+            if (!isScanning) return;
+
+            if (result?.getText()) {
+              lastDecodeError = '';
+              processScannedValue(result.getText(), 'camera');
+              return;
+            }
+
+            // ZXing reports misses for many frames; those are expected.
+            if (error && !isExpectedDecodeMiss(error)) {
+              const message = error?.message || String(error);
+              if (message !== lastDecodeError) {
+                console.error('Barcode decode error:', error);
+                lastDecodeError = message;
+              }
+            }
+          }
+        );
+
+        // ZXing attaches its MediaStream to this preview element.
+        cameraStream = video.srcObject instanceof MediaStream
+          ? video.srcObject
+          : null;
+
         video.muted = true;
         video.playsInline = true;
         video.setAttribute('playsinline', '');
-        await video.play();
+
         await tryEnableContinuousFocus();
         await configureCameraZoom();
 
-        const activeTrack = cameraStream.getVideoTracks()[0];
+        const activeTrack = cameraStream?.getVideoTracks()[0];
         const activeSettings = activeTrack?.getSettings?.();
         if (activeSettings?.width && activeSettings?.height) {
           console.info(`Camera resolution: ${activeSettings.width}×${activeSettings.height}`);
         }
 
-        isScanning = true;
         setCameraUi(true);
         await listCameras();
         updateFlashAvailability();
-        scanLoop();
-        toast('Camera started', 'Scanning is active. Keep the full barcode inside the wide white frame; the camera will try to use higher resolution.', 'success');
+        toast('Camera started', 'ZXing continuous scanning is active. Keep the barcode visible in the preview.', 'success');
       } catch (error) {
         stopCamera(false);
         console.error('Unable to start camera:', error);
@@ -478,48 +492,6 @@
           message = 'The camera is busy in another app or could not be started. Close other apps using the camera and retry.';
         }
         toast('Camera unavailable', message, 'error');
-      }
-    }
-
-    const scanCanvas = document.createElement('canvas');
-    const scanContext = scanCanvas.getContext('2d', { willReadFrequently: true });
-
-    function scanLoop() {
-      if (!isScanning) return;
-      try {
-        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
-          if (!scanContext) throw new Error('Unable to create the scan canvas.');
-          const region = getScanRegion(video.videoWidth, video.videoHeight);
-          scanCanvas.width = region.width;
-          scanCanvas.height = region.height;
-          scanContext.drawImage(video, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height);
-
-          try {
-            const result = reader.decodeFromCanvas(scanCanvas);
-            const value = result?.getText?.();
-            if (value) {
-              lastDecodeError = '';
-              processScannedValue(value, 'camera');
-            }
-          } catch (error) {
-            // No barcode in an individual frame is expected during continuous scanning.
-            if (!isExpectedDecodeMiss(error)) {
-              const message = error?.message || String(error);
-              if (message !== lastDecodeError) {
-                console.error('Barcode decode error:', error);
-                lastDecodeError = message;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        const message = error?.message || String(error);
-        if (message !== lastDecodeError) {
-          console.error('Scanner frame error:', error);
-          lastDecodeError = message;
-        }
-      } finally {
-        if (isScanning) scanTimer = window.setTimeout(scanLoop, 150);
       }
     }
 
@@ -579,20 +551,34 @@
 
     function stopCamera(showToast = true) {
       isScanning = false;
-      if (scanTimer !== null) window.clearTimeout(scanTimer);
-      scanTimer = null;
-      cameraStream?.getTracks().forEach(track => track.stop());
+
+      // Stop ZXing's continuous reader first; it also detaches its video source.
+      if (scannerControls) {
+        try {
+          scannerControls.stop();
+        } catch (error) {
+          console.warn('Unable to stop ZXing controls cleanly:', error);
+        }
+        scannerControls = null;
+      }
+
+      // Fallback cleanup in case startup failed before controls were returned.
+      const stream = cameraStream || (video.srcObject instanceof MediaStream ? video.srcObject : null);
+      stream?.getTracks().forEach(track => track.stop());
       cameraStream = null;
+
       if (video) {
         video.pause();
         video.srcObject = null;
       }
+
       torchIsOn = false;
       flashBtn.textContent = 'Flash off';
       flashBtn.setAttribute('aria-pressed', 'false');
       flashBtn.classList.add('hidden');
       zoomControl.classList.add('hidden');
       setCameraUi(false);
+
       if (showToast) toast('Camera stopped', 'The camera has been released.');
     }
 
