@@ -73,7 +73,7 @@
     .video-placeholder strong { color: #dbe2e7; font-size: 14px; }
     .video-placeholder small { max-width: 310px; font-size: 12px; }
     .scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
-    .scan-box { width: 55%; height: 40%; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%); position: relative; }
+    .scan-box { width: var(--scan-region-width, 90%); height: var(--scan-region-height, 55%); border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%); position: relative; }
     .scan-box::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed rgb(255 255 255 / 65%); }
     .scanner-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 11px; color: var(--soft); font-size: 12px; }
     .camera-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
@@ -183,7 +183,7 @@
             </div>
             <div class="scanner-overlay" aria-hidden="true"><div class="scan-box"></div></div>
           </div>
-          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 55% × 40%</span></div>
+          <div class="scanner-footer"><span id="scanMessage">Camera has not started.</span><span>Scan area: 90% × 55%</span></div>
           <p class="camera-note">Tap Start camera to request access the first time. On iPhone, if access was previously denied, allow Camera in this site’s browser settings and reload. Camera access requires HTTPS or localhost. The demo does not send scanned values to a server.</p>
 
           <div class="divider-label">Or test without a camera</div>
@@ -253,9 +253,14 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
 
- <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script>
     'use strict';
+
+    // Keep the visible scan box and the decoded crop in sync.
+    const SCAN_REGION = { width: 0.9, height: 0.55 };
+    document.documentElement.style.setProperty('--scan-region-width', `${SCAN_REGION.width * 100}%`);
+    document.documentElement.style.setProperty('--scan-region-height', `${SCAN_REGION.height * 100}%`);
 
     // Demo-only data: this page makes no API requests.
     const demoItems = {
@@ -355,8 +360,8 @@
         visibleY = (sourceHeight - visibleHeight) / 2;
       }
 
-      const cropWidth = Math.max(1, Math.round(visibleWidth * 0.55));
-      const cropHeight = Math.max(1, Math.round(visibleHeight * 0.4));
+      const cropWidth = Math.max(1, Math.round(visibleWidth * SCAN_REGION.width));
+      const cropHeight = Math.max(1, Math.round(visibleHeight * SCAN_REGION.height));
       return {
         x: Math.max(0, Math.round(visibleX + (visibleWidth - cropWidth) / 2)),
         y: Math.max(0, Math.round(visibleY + (visibleHeight - cropHeight) / 2)),
@@ -392,6 +397,25 @@
       }
     }
 
+    async function tryEnableContinuousFocus() {
+      const track = cameraStream?.getVideoTracks()[0];
+      if (!track?.getCapabilities || !track?.applyConstraints) return;
+
+      try {
+        const capabilities = track.getCapabilities();
+        // Not every browser exposes focusMode through MediaStreamTrack.
+        if (Array.isArray(capabilities.focusMode) &&
+            capabilities.focusMode.includes('continuous')) {
+          await track.applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+        }
+      } catch (error) {
+        // Autofocus support is device/browser-specific; scanning can continue.
+        console.info('Continuous autofocus could not be configured:', error?.message || error);
+      }
+    }
+
     async function startCamera(deviceId = null) {
       if (isScanning) return;
       try {
@@ -400,19 +424,8 @@
           throw new Error('Camera access is unavailable in this browser. Use HTTPS or localhost.');
         }
         const videoConstraints = deviceId
-    ? {
-        deviceId: { exact: deviceId },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        frameRate: { ideal: 30 }
-    }
-    : {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        frameRate: { ideal: 30 }
-    };
-      
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } };
 
         cameraStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
         video.srcObject = cameraStream;
@@ -420,13 +433,20 @@
         video.playsInline = true;
         video.setAttribute('playsinline', '');
         await video.play();
-await tryEnableContinuousFocus();
+        await tryEnableContinuousFocus();
+
+        const activeTrack = cameraStream.getVideoTracks()[0];
+        const activeSettings = activeTrack?.getSettings?.();
+        if (activeSettings?.width && activeSettings?.height) {
+          console.info(`Camera resolution: ${activeSettings.width}×${activeSettings.height}`);
+        }
+
         isScanning = true;
         setCameraUi(true);
         await listCameras();
         updateFlashAvailability();
         scanLoop();
-        toast('Camera started', 'Scanning is active. Hold a barcode inside the white frame.', 'success');
+        toast('Camera started', 'Scanning is active. Keep the full barcode inside the wide white frame; the camera will try to use higher resolution.', 'success');
       } catch (error) {
         stopCamera(false);
         console.error('Unable to start camera:', error);
@@ -693,31 +713,7 @@ await tryEnableContinuousFocus();
       document.getElementById('documentsModal').classList.add('open');
       document.getElementById('closeModalX').focus();
     }
-async function tryEnableContinuousFocus() {
-    const track = cameraStream?.getVideoTracks()[0];
 
-    if (!track?.getCapabilities || !track?.applyConstraints) {
-        return;
-    }
-
-    try {
-        const capabilities = track.getCapabilities();
-
-        if (
-            Array.isArray(capabilities.focusMode) &&
-            capabilities.focusMode.includes('continuous')
-        ) {
-            await track.applyConstraints({
-                advanced: [{ focusMode: 'continuous' }]
-            });
-        }
-    } catch (error) {
-        console.info(
-            'Continuous autofocus is not configurable on this device:',
-            error.message
-        );
-    }
-}
     function closeDocuments() {
       document.getElementById('documentsModal').classList.remove('open');
     }
